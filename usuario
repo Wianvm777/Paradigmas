@@ -1,0 +1,82 @@
+# Importación de dependencias necesarias para la clase Usuario
+from cuenta import Cuenta
+from datetime import datetime
+
+# La clase Usuario gestiona la información y transacciones de un usuario en el sistema
+# Depende de la clase Cuenta para manejar el saldo y asume que el historial de transacciones
+# contiene diccionarios con las claves 'tipo', 'fecha', 'monto' y, opcionalmente, 'destino' o 'origen'
+class Usuario:
+    """Clase que modela un usuario con nombre completo, cédula, contraseña hasheada, saldo e historial.
+
+    Esta clase representa un usuario en un sistema, gestionando su información personal,
+    cuenta asociada y un historial de transacciones. Permite calcular totales mensuales
+    de transacciones específicas y serializar los datos del usuario a un formato JSON.
+
+    Attributes:
+        nombre_completo (str): Nombre completo del usuario.
+        cedula (str): Cédula única del usuario.
+        password_hash (str): Contraseña hasheada del usuario.
+        cuenta (Cuenta): Instancia de la clase Cuenta asociada al usuario.
+        historial (list): Lista de transacciones realizadas por el usuario.
+    """
+
+    def __init__(self, nombre_completo, cedula, password_hash, saldo=0.0, historial=None):
+        """Inicializa una nueva instancia de la clase Usuario.
+
+        Args:
+            nombre_completo (str): Nombre completo del usuario.
+            cedula (str): Cédula única del usuario.
+            password_hash (str): Contraseña hasheada del usuario.
+            saldo (float, optional): Saldo inicial de la cuenta del usuario. Por defecto es 0.0.
+            historial (list, optional): Lista inicial de transacciones. Si es None, se inicializa como lista vacía.
+        """
+        # Asignación de atributos iniciales y creación de la cuenta asociada
+        self.nombre_completo = nombre_completo
+        self.cedula = cedula
+        self.password_hash = password_hash
+        self.cuenta = Cuenta(cedula, saldo)
+        self.historial = historial or []  # Inicializa historial como lista vacía si es None
+
+    def to_dict(self):
+        """Convierte los datos del usuario en un diccionario para serializar a JSON.
+
+        Returns:
+            dict: Diccionario con los datos del usuario, incluyendo nombre completo, cédula,
+                  contraseña hasheada, saldo de la cuenta y el historial de transacciones.
+        """
+        # Serializa los datos del usuario en un formato adecuado para JSON
+        return {
+            'nombre_completo': self.nombre_completo,
+            'cedula': self.cedula,
+            'password_hash': self.password_hash,
+            'saldo': self.cuenta.saldo,
+            'historial': self.historial
+        }
+
+    def total_mensual(self, tipo):
+        """Calcula el total enviado o retirado por el usuario en el mes actual.
+
+        Itera sobre el historial de transacciones, sumando los montos de las transacciones
+        del tipo especificado que ocurrieron en el mes y año actuales. Ignora transacciones
+        con fechas inválidas.
+
+        Args:
+            tipo (str): Tipo de transacción a calcular ('enviado' o 'retirado').
+
+        Returns:
+            float: Suma total de los montos de las transacciones del tipo especificado
+                   en el mes actual.
+        """
+        # Obtiene la fecha actual para comparar con las fechas de las transacciones
+        ahora = datetime.now()
+        total = 0
+        # Itera sobre el historial para sumar montos de transacciones válidas
+        for t in self.historial:
+            if t.get('tipo') == tipo and 'fecha' in t:
+                try:
+                    fecha = datetime.fromisoformat(t['fecha'])
+                    if fecha.year == ahora.year and fecha.month == ahora.month:
+                        total += t['monto']
+                except ValueError:
+                    continue  # Ignora transacciones con fechas inválidas
+        return total
