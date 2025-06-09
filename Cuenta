@@ -1,0 +1,60 @@
+# Importación de módulos necesarios para manejar concurrencia y simulación de retrasos
+import threading
+import time
+import random
+
+# La clase Cuenta modela una cuenta bancaria con soporte para transferencias seguras
+# Utiliza un candado (Lock) para garantizar la seguridad en operaciones concurrentes
+class Cuenta:
+    """Clase que representa una cuenta bancaria con saldo y bloqueo para concurrencia.
+
+    Esta clase modela una cuenta bancaria identificada por un nombre, con un saldo inicial
+    y un mecanismo de bloqueo para manejar transferencias de manera segura en entornos
+    concurrentes, evitando condiciones de carrera.
+
+    Attributes:
+        nombre (str): Nombre o identificador de la cuenta.
+        saldo (float): Saldo actual de la cuenta.
+        lock (threading.Lock): Candado para sincronización en operaciones concurrentes.
+    """
+
+    def __init__(self, nombre, saldo=0.0):
+        """Inicializa una nueva instancia de la clase Cuenta.
+
+        Args:
+            nombre (str): Nombre o identificador de la cuenta.
+            saldo (float, optional): Saldo inicial de la cuenta. Por defecto es 0.0.
+        """
+        # Asignación de atributos iniciales y creación del candado para concurrencia
+        self.nombre = nombre
+        self.saldo = saldo
+        self.lock = threading.Lock()
+
+    def transferir(self, destino, monto):
+        """Realiza una transferencia a otra cuenta si hay saldo suficiente.
+
+        Adquiere el candado de la cuenta origen, verifica si hay saldo suficiente,
+        resta el monto de la cuenta origen y lo suma a la cuenta destino, adquiriendo
+        también su candado. Incluye un retraso aleatorio para simular procesamiento.
+        La operación es atómica para evitar condiciones de carrera.
+
+        Args:
+            destino (Cuenta): Instancia de la clase Cuenta que recibirá la transferencia.
+            monto (float): Cantidad a transferir.
+
+        Returns:
+            bool: True si la transferencia fue exitosa, False si no hay saldo suficiente.
+        """
+        # Adquiere el candado de la cuenta origen para garantizar exclusión mutua
+        with self.lock:
+            if self.saldo >= monto:
+                # Simula un retraso en el procesamiento de la transferencia
+                time.sleep(random.uniform(0.2, 0.5))
+                # Resta el monto de la cuenta origen
+                self.saldo -= monto
+                # Adquiere el candado de la cuenta destino para actualizar su saldo
+                with destino.lock:
+                    destino.saldo += monto
+                return True
+            # Retorna False si no hay saldo suficiente
+            return False
