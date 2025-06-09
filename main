@@ -1,0 +1,36 @@
+# Importación de módulos necesarios para la aplicación GUI y su ejecución
+import sys
+from PyQt6.QtWidgets import QApplication
+from controller import AppController
+from ui import SistemaBancarioApp
+
+# La función main sirve como punto de entrada para la aplicación bancaria
+# Inicializa la interfaz gráfica, el controlador y configura la ventana principal
+def main():
+    """Punto de entrada principal para la aplicación bancaria.
+
+    Inicializa la aplicación PyQt6, crea una instancia del controlador de la lógica
+    de negocio (AppController) y la ventana principal de la interfaz gráfica
+    (SistemaBancarioApp). Configura el tamaño de la ventana y ejecuta el bucle de
+    eventos de la aplicación.
+
+    Returns:
+        int: Código de salida de la aplicación, retornado por sys.exit().
+    """
+    # Crea la instancia de la aplicación PyQt6 con los argumentos de la línea de comandos
+    aplicacion = QApplication(sys.argv)
+    # Inicializa el controlador de la lógica de negocio
+    controlador = AppController()
+    # Crea la ventana principal de la interfaz gráfica, vinculada al controlador
+    ventana_principal = SistemaBancarioApp(controlador)
+    # Establece el tamaño inicial de la ventana (500x600 píxeles)
+    ventana_principal.resize(500, 600)
+    # Muestra la ventana principal en pantalla
+    ventana_principal.show()
+    # Ejecuta el bucle de eventos de la aplicación y retorna el código de salida
+    return sys.exit(aplicacion.exec())
+
+# Verifica si el script se ejecuta directamente (no como módulo importado)
+if __name__ == '__main__':
+    # Llama a la función principal para iniciar la aplicación
+    main()
