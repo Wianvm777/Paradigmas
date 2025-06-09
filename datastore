@@ -1,0 +1,74 @@
+# Importación de módulos necesarios para manejo de JSON, usuarios y hash de contraseñas
+import json
+from usuario import Usuario
+import hashlib
+
+# Función auxiliar para generar un hash seguro de contraseñas
+def hash_password(contraseña):
+    """Genera un hash SHA256 de la contraseña para almacenarla de forma segura.
+
+    Convierte la contraseña en texto plano a un hash SHA256 codificado en hexadecimal,
+    asegurando que no se almacene la contraseña original.
+
+    Args:
+        contraseña (str): Contraseña en texto plano a hashear.
+
+    Returns:
+        str: Hash SHA256 de la contraseña en formato hexadecimal.
+    """
+    # Codifica la contraseña como bytes y genera el hash SHA256
+    return hashlib.sha256(contraseña.encode()).hexdigest()
+
+# La clase DataStore maneja la persistencia de datos de usuarios en un archivo JSON
+# Proporciona métodos estáticos para cargar y guardar usuarios de manera eficiente
+class DataStore:
+    """Clase para gestionar la carga y guardado de datos de usuarios en un archivo JSON.
+
+    Esta clase proporciona métodos estáticos para leer y escribir datos de usuarios
+    en un archivo JSON, permitiendo la persistencia de la información entre sesiones.
+    Los usuarios se serializan y deserializan utilizando el método to_dict de la clase Usuario.
+
+    Attributes:
+        NOMBRE_ARCHIVO (str): Nombre del archivo JSON donde se almacenan los datos de usuarios.
+    """
+    NOMBRE_ARCHIVO = 'usuarios.json'
+
+    @staticmethod
+    def cargar_usuarios():
+        """Carga los usuarios desde el archivo JSON; retorna lista vacía si no existe.
+
+        Lee el archivo JSON especificado en NOMBRE_ARCHIVO y convierte los datos en una
+        lista de instancias de la clase Usuario. Maneja errores como archivo inexistente
+        o formato JSON inválido retornando una lista vacía.
+
+        Returns:
+            list: Lista de instancias de la clase Usuario cargadas desde el archivo.
+        """
+        try:
+            # Abre el archivo JSON en modo lectura
+            with open(DataStore.NOMBRE_ARCHIVO, 'r') as archivo:
+                datos_usuarios = json.load(archivo)
+        except (FileNotFoundError, json.JSONDecodeError):
+            # Retorna lista vacía si el archivo no existe o el JSON es inválido
+            return []
+        # Convierte cada diccionario de usuario en una instancia de la clase Usuario
+        return [Usuario(datos_usuario['nombre_completo'], datos_usuario['cedula'], 
+                        datos_usuario['password_hash'], datos_usuario['saldo'], 
+                        datos_usuario['historial']) 
+                for datos_usuario in datos_usuarios]
+
+    @staticmethod
+    def guardar_usuarios(lista_usuarios):
+        """Guarda la lista de usuarios en el archivo JSON, sobrescribiendo el contenido.
+
+        Serializa la lista de usuarios a un formato JSON utilizando el método to_dict
+        de cada usuario y escribe el resultado en el archivo especificado, con formato
+        legible (indentado).
+
+        Args:
+            lista_usuarios (list): Lista de instancias de la clase Usuario a guardar.
+        """
+        # Abre el archivo JSON en modo escritura, sobrescribiendo el contenido
+        with open(DataStore.NOMBRE_ARCHIVO, 'w') as archivo:
+            # Serializa la lista de usuarios a JSON con indentación para legibilidad
+            json.dump([usuario.to_dict() for usuario in lista_usuarios], archivo, indent=2)
