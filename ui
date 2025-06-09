@@ -1,0 +1,562 @@
+# Módulos estándar de Python
+import sys                # Permite acceder a funcionalidades del sistema, como argumentos de ejecución.
+import threading          # Usado para manejar concurrencia (locks en transferencias); utilizado en cuenta.py.
+import time               # Permite agregar retardos simulados con sleep(); usado en cuenta.py.
+import random             # Genera números aleatorios (para retardos); usado en cuenta.py.
+import json               # Maneja lectura/escritura de archivos JSON; usado en datastore.py.
+import hashlib            # Permite encriptar contraseñas con SHA-256; usado en datastore.py.
+
+# Módulo de fechas y horas
+from datetime import datetime  # Se usa para registrar y formatear fechas en las transacciones.
+
+# Componentes de la interfaz gráfica (PyQt6)
+from PyQt6.QtWidgets import (
+    QApplication,      # Punto de entrada principal de cualquier aplicación PyQt.
+    QWidget,           # Clase base para todos los elementos visuales.
+    QVBoxLayout,       # Layout vertical para organizar widgets.
+    QLabel,            # Etiqueta de texto.
+    QPushButton,       # Botón interactivo.
+    QLineEdit,         # Campo de texto (entrada del usuario).
+    QComboBox,         # Lista desplegable.
+    QMessageBox,       # Ventanas emergentes de mensajes (alertas, información).
+    QListWidget,       # Lista visual de elementos (usuarios, historial).
+    QInputDialog,      # Diálogo para ingresar texto (como clave admin).
+    QTabWidget,        # Contenedor de pestañas.
+    QHBoxLayout        # Layout horizontal para organizar widgets.
+)
+
+from PyQt6.QtGui import QFont, QPixmap  # QFont permite definir fuentes, QPixmap carga y muestra imágenes.
+from PyQt6.QtCore import Qt             # Proporciona alineaciones y constantes útiles (como AlignTop, AlignRight).
+
+# Módulos del sistema desarrollados por el usuario
+from cuenta import Cuenta               # Modelo de cuenta bancaria con saldo y transferencias.
+from usuario import Usuario             # Modelo de usuario con datos personales, cuenta e historial.
+from datastore import DataStore, hash_password  # Manejo de persistencia (guardar/cargar usuarios) y encriptación.
+from controller import AppController    # Controlador principal que gestiona la lógica del sistema (login, registro, etc.).
+
+# Máximo de usuarios permitidos
+MAX_USUARIOS = 50  # Define el límite máximo de usuarios permitidos en el sistema
+# Contraseña fija para acceder al panel de administración
+ADMIN_PASSWORD = "2025"  # Contraseña que se utiliza para acceder a la sección administrativa
+
+# ----------------- Interfaz con QTabWidget -----------------
+class SistemaBancarioApp(QTabWidget):
+    """
+    Clase principal de la interfaz gráfica que usa QTabWidget para organizar las pestañas:
+    0: Login, 1: Registro, 2: Principal, 3: Admin, 4: Transacciones
+    """
+
+    def __init__(self, ctrl, parent=None):
+        super().__init__(parent)  # Llama al constructor de QTabWidget
+        self.ctrl = ctrl  # Se asocia el controlador que maneja la lógica de la aplicación
+        self.setWindowTitle("MiniPay (Pestañas)")  # Establece el título de la ventana principal
+        self.setStyleSheet("background-color: #FFFFFF; color: #000000; font-family: Barlow;")  # Aplica el estilo CSS a la interfaz
+
+        # Crea las páginas para cada pestaña
+        self.login_page = self.crear_pagina_login()  # Página para el login de usuario
+        self.register_page = self.crear_pagina_registro()  # Página para el registro de usuario
+        self.principal_page = self.crear_pagina_principal()  # Página principal donde se realizan transacciones
+        self.admin_page = self.crear_pagina_admin()  # Página administrativa para gestionar usuarios
+        self.transacciones_page = self.crear_pagina_transacciones()  # Página para ver el historial de transacciones
+
+        # Añade las pestañas al QTabWidget
+        self.addTab(self.login_page, "Login")  # Pestaña de Login
+        self.addTab(self.register_page, "Registro")  # Pestaña de Registro
+        self.addTab(self.principal_page, "Principal")  # Pestaña principal
+        self.addTab(self.admin_page, "Administrar")  # Pestaña de administración
+        self.addTab(self.transacciones_page, "Transacciones")  # Pestaña para ver transacciones
+
+        # Deshabilita las pestañas que requieren autenticación
+        self.setTabEnabled(2, False)  # Desactiva la pestaña "Principal"
+        self.setTabEnabled(3, False)  # Desactiva la pestaña "Administrar"
+        self.setTabEnabled(4, False)  # Desactiva la pestaña "Transacciones"
+
+        # Establece la pestaña inicial como Login
+        self.setCurrentIndex(0)  # La primera pestaña visible es "Login"
+
+    # ------------- Pestaña Login (0) -------------
+    def crear_pagina_login(self) -> QWidget:
+        page = QWidget()  # Crea un contenedor de tipo QWidget para la página de login
+        layout = QVBoxLayout(page)  # Utiliza un layout vertical para organizar los widgets
+        layout.setContentsMargins(0, -10, -10, 0)  # Establece márgenes alrededor del layout
+
+        top_layout = QHBoxLayout()  # Crea un layout horizontal para la parte superior de la página
+        layout.addLayout(top_layout)  # Añade el layout horizontal a la página
+        top_layout.addStretch()  # Añade espacio flexible en la parte superior
+
+        # Añade el logo de la aplicación
+        icon_label = QLabel()  # Crea una etiqueta de texto que contendrá la imagen
+        pix = QPixmap('logo.png')  # Carga la imagen desde un archivo
+        if not pix.isNull():  # Verifica que la imagen se haya cargado correctamente
+            icon_label.setPixmap(pix.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatio))  # Redimensiona la imagen
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)  # Alinea la imagen a la derecha y arriba
+        top_layout.addWidget(icon_label)  # Añade la imagen al layout superior
+
+        # Crea un campo para ingresar la cédula
+        lbl_cedula = QLabel("Cédula:")  # Etiqueta para el campo de cédula
+        lbl_cedula.setFont(QFont("Barlow", 12))  # Establece el estilo de la etiqueta
+        layout.addWidget(lbl_cedula)  # Añade la etiqueta al layout
+
+        self.login_cedula_input = QLineEdit() # Crea el campo de texto donde se ingresará la cédula
+        self.login_cedula_input.setStyleSheet("background-color: #FFFFFF; color: #000350; font-family: Barlow;")  # Estilo del campo
+        layout.addWidget(self.login_cedula_input)  # Añade el campo de texto al layout
+
+        # Crea un campo para ingresar la contraseña
+        lbl_pwd = QLabel("Contraseña:")  # Etiqueta para el campo de contraseña
+        lbl_pwd.setFont(QFont("Barlow", 12))  # Establece el estilo de la etiqueta
+        layout.addWidget(lbl_pwd)  # Añade la etiqueta al layout
+
+        self.login_pwd_input = QLineEdit()  # Crea el campo de texto para la contraseña
+        self.login_pwd_input.setEchoMode(QLineEdit.EchoMode.Password)  # Establece el modo para que la contraseña no se vea
+        self.login_pwd_input.setStyleSheet("background-color: #FFFFFF; color: #000000; font-family: Barlow;")  # Estilo del campo
+        layout.addWidget(self.login_pwd_input)  # Añade el campo de contraseña al layout
+
+        # Crea el botón para ingresar
+        btn_login = QPushButton("Ingresar")  # Crea un botón con el texto "Ingresar"
+        btn_login.setFont(QFont("Barlow", 12))  # Establece el estilo del botón
+        btn_login.setStyleSheet("background-color: #00FF00; color: #FFFFFF;")  # Estilo del botón
+        btn_login.clicked.connect(self.handle_login)  # Conecta el evento de clic con la función handle_login
+        layout.addWidget(btn_login)  # Añade el botón al layout
+
+        # Crea el botón de registro
+        btn_reg = QPushButton("Registrarse")  # Crea un botón con el texto "Registrarse"
+        btn_reg.setFont(QFont("Barlow", 12))  # Establece el estilo del botón
+        btn_reg.setStyleSheet("background-color: #00FF00; color: #FFFFFF;")  # Estilo del botón
+        btn_reg.clicked.connect(lambda: self.setCurrentIndex(1))  # Cambia a la pestaña de registro al hacer clic
+        layout.addWidget(btn_reg)  # Añade el botón de registro al layout
+
+        # Crea el botón de administración de usuarios
+        btn_admin = QPushButton("Administrar Usuarios")  # Crea un botón para acceder a la administración
+        btn_admin.setFont(QFont("Barlow", 12))  # Establece el estilo del botón
+        btn_admin.setStyleSheet("background-color: #00FF00; color: #FFFFFF;")  # Estilo del botón
+        btn_admin.clicked.connect(self.handle_admin_access)  # Conecta el evento de clic con la función de acceso a admin
+        layout.addWidget(btn_admin)  # Añade el botón al layout
+
+        return page  # Devuelve la página de login completada
+
+    def handle_login(self):
+        cedula = self.login_cedula_input.text().strip()  # Obtiene el valor ingresado en el campo de cédula
+        pwd = self.login_pwd_input.text().strip()  # Obtiene el valor ingresado en el campo de contraseña
+        hashed_pwd = hash_password(pwd)  # Hashea la contraseña antes de enviarla
+        print(f"Logging in with hashed password: {hashed_pwd}")  # Imprime la contraseña hasheada para depuración
+        if self.ctrl.autenticar(cedula, pwd):  # Llama al controlador para autenticar al usuario
+            self.setTabEnabled(2, True)  # Habilita la pestaña "Principal"
+            self.setTabEnabled(4, True)  # Habilita la pestaña "Transacciones"
+            self.setCurrentIndex(2)  # Cambia a la pestaña principal
+            self.refrescar_principal()  # Actualiza la información de la pestaña principal
+        else:
+            QMessageBox.warning(self, "Error", "Cédula o contraseña incorrectos")  # Muestra un mensaje de error
+
+    def handle_admin_access(self):
+        clave, ok = QInputDialog.getText(self, "Clave Admin", "Ingrese clave:", QLineEdit.EchoMode.Password)  # Pide la clave
+        if ok and clave == ADMIN_PASSWORD:  # Verifica si la clave ingresada es correcta
+            self.setTabEnabled(3, True)  # Habilita la pestaña de administración
+            self.setCurrentIndex(3)  # Cambia a la pestaña de administración
+            self.refrescar_admin()  # Actualiza la información de la pestaña de administración
+        else:
+            QMessageBox.warning(self, "Error", "Clave incorrecta")  # Muestra un mensaje de error
+
+    # ------------- Pestaña Registro (1) -------------
+    def crear_pagina_registro(self) -> QWidget:
+        page = QWidget()  # Crea un contenedor de tipo QWidget para la página de registro
+        layout = QVBoxLayout(page)  # Utiliza un layout vertical para organizar los widgets
+        layout.setContentsMargins(0, -10, -10, 0)  # Establece márgenes alrededor del layout
+
+        top_layout = QHBoxLayout()  # Crea un layout horizontal para la parte superior de la página
+        layout.addLayout(top_layout)  # Añade el layout horizontal a la página
+        top_layout.addStretch()  # Añade espacio flexible en la parte superior
+
+        # Añade el logo de la aplicación
+        icon_label = QLabel()  # Crea una etiqueta de texto que contendrá la imagen
+        pix = QPixmap('logo.png')  # Carga la imagen desde un archivo
+        if not pix.isNull():  # Verifica que la imagen se haya cargado correctamente
+            icon_label.setPixmap(pix.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatio))  # Redimensiona la imagen
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)  # Alinea la imagen a la derecha y arriba
+        top_layout.addWidget(icon_label)  # Añade la imagen al layout superior
+
+        # Crea un campo para ingresar el nombre completo
+        lbl_nombre = QLabel("Nombre completo:")  # Etiqueta para el campo de nombre completo
+        lbl_nombre.setFont(QFont("Barlow", 12))  # Establece el estilo de la etiqueta
+        layout.addWidget(lbl_nombre)  # Añade la etiqueta al layout
+
+        self.nombre_input = QLineEdit()  # Crea el campo de texto donde se ingresará el nombre
+        self.nombre_input.setStyleSheet("background-color: #FFFFFF; color: #000000; font-family: Barlow;")  # Estilo del campo
+        layout.addWidget(self.nombre_input)  # Añade el campo de texto al layout
+
+        # Crea un campo para ingresar la cédula
+        lbl_cedula = QLabel("Cédula:")  # Etiqueta para el campo de cédula
+        lbl_cedula.setFont(QFont("Barlow", 12))  # Establece el estilo de la etiqueta
+        layout.addWidget(lbl_cedula)  # Añade la etiqueta al layout
+
+        self.register_cedula_input = QLineEdit()  # Crea el campo de texto donde se ingresará la cédula
+        self.register_cedula_input.setStyleSheet("background-color: #FFFFFF; color: #000000; font-family: Barlow;")  # Estilo del campo
+        layout.addWidget(self.register_cedula_input)  # Añade el campo de texto al layout
+
+        # Crea un campo para ingresar la contraseña
+        lbl_pwd = QLabel("Contraseña (mínimo 8 caracteres):")  # Etiqueta para el campo de contraseña
+        lbl_pwd.setFont(QFont("Barlow", 12))  # Establece el estilo de la etiqueta
+        layout.addWidget(lbl_pwd)  # Añade la etiqueta al layout
+
+        self.register_pwd_input = QLineEdit()  # Crea el campo de texto para la contraseña
+        self.register_pwd_input.setEchoMode(QLineEdit.EchoMode.Password)  # Establece el modo para que la contraseña no se vea
+        self.register_pwd_input.setStyleSheet("background-color: #FFFFFF; color: #000000; font-family: Barlow;")  # Estilo del campo
+        layout.addWidget(self.register_pwd_input)  # Añade el campo de contraseña al layout
+
+        # Crea el botón para crear la cuenta
+        btn_create = QPushButton("Crear cuenta")  # Crea un botón con el texto "Crear cuenta"
+        btn_create.setFont(QFont("Barlow", 12))  # Establece el estilo del botón
+        btn_create.setStyleSheet("background-color: #00FF00; color: #FFFFFF;")  # Estilo del botón
+        btn_create.clicked.connect(self.handle_register)  # Conecta el evento de clic con la función handle_register
+        layout.addWidget(btn_create)  # Añade el botón al layout
+
+        # Crea el botón para volver a la pantalla de login
+        btn_back = QPushButton("Volver a Login")  # Crea un botón con el texto "Volver a Login"
+        btn_back.setFont(QFont("Barlow", 12))  # Establece el estilo del botón
+        btn_back.setStyleSheet("background-color: #00FF00; color: #FFFFFF;")  # Estilo del botón
+        btn_back.clicked.connect(lambda: self.setCurrentIndex(0))  # Cambia a la pestaña de login al hacer clic
+        layout.addWidget(btn_back)  # Añade el botón de volver al layout
+
+        return page  # Devuelve la página de registro completada
+
+    def handle_register(self):
+        nombre_completo = self.nombre_input.text().strip()  # Obtiene el nombre completo ingresado
+        cedula = self.register_cedula_input.text().strip()  # Obtiene la cédula ingresada
+        pwd = self.register_pwd_input.text().strip()  # Obtiene la contraseña ingresada
+
+        if len(pwd) < 8:  # Verifica que la contraseña tenga al menos 8 caracteres
+            QMessageBox.warning(self, "Error", "La contraseña debe tener al menos 8 caracteres")  # Muestra un mensaje de advertencia
+            return
+
+        hashed_pwd = hash_password(pwd)  # Hashea la contraseña antes de registrarla
+        print(f"Registering with hashed password: {hashed_pwd}")  # Imprime la contraseña hasheada para depuración
+        if self.ctrl.registrar(nombre_completo, cedula, hashed_pwd):  # Llama al controlador para registrar al usuario
+            QMessageBox.information(self, "Éxito", "Usuario registrado")  # Muestra un mensaje de éxito
+            self.setCurrentIndex(0)  # Vuelve a la pestaña de login
+            self.nombre_input.clear()  # Limpia el campo de nombre
+            self.register_cedula_input.clear()  # Limpia el campo de cédula
+            self.register_pwd_input.clear()  # Limpia el campo de contraseña
+        else:
+            QMessageBox.warning(self, "Error", "Cédula ya registrada o límite alcanzado")  # Muestra un mensaje de error
+
+    # ------------- Pestaña Principal (2) -------------
+    def crear_pagina_principal(self) -> QWidget:
+        page = QWidget()  # Crea un contenedor para la página principal
+        layout = QVBoxLayout(page)  # Utiliza un layout vertical para organizar los widgets
+        layout.setContentsMargins(0, -10, -10, 0)  # Establece márgenes alrededor del layout
+
+        top_layout = QHBoxLayout()  # Crea un layout horizontal para la parte superior de la página
+        layout.addLayout(top_layout)  # Añade el layout horizontal al layout principal
+
+        self.nombre_lbl = QLabel()  # Crea una etiqueta para mostrar el nombre del usuario
+        self.nombre_lbl.setFont(QFont('Barlow', 14))  # Establece la fuente de la etiqueta
+        top_layout.addWidget(self.nombre_lbl)  # Añade la etiqueta al layout superior
+
+        self.saldo_lbl = QLabel()  # Crea una etiqueta para mostrar el saldo del usuario
+        self.saldo_lbl.setFont(QFont('Barlow', 14))  # Establece la fuente de la etiqueta
+        top_layout.addWidget(self.saldo_lbl)  # Añade la etiqueta al layout superior
+
+        # Añade el logo de la aplicación
+        icon_label = QLabel()  # Crea una etiqueta de texto para mostrar el logo
+        pix = QPixmap('logo.png')  # Carga la imagen del logo
+        if not pix.isNull():  # Verifica que la imagen fue cargada correctamente
+            icon_label.setPixmap(pix.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatio))  # Redimensiona la imagen
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)  # Alinea la imagen
+        top_layout.addWidget(icon_label)  # Añade la imagen al layout superior
+
+        # Crea un campo para ingresar el monto de la transacción
+        self.monto_input = QLineEdit()  # Campo de texto para ingresar el monto
+        self.monto_input.setPlaceholderText('Monto')  # Establece el texto de sugerencia en el campo
+        self.monto_input.setStyleSheet('background-color: #FFFFFF; color: #000000; font-family: Barlow;')  # Estilo del campo
+        layout.addWidget(self.monto_input)  # Añade el campo de monto al layout
+
+        # Crea una etiqueta para seleccionar el destinatario
+        lbl_dest = QLabel('Destinatario:')  # Etiqueta para el campo de destinatario
+        lbl_dest.setFont(QFont('Barlow', 12))  # Establece el estilo de la etiqueta
+        layout.addWidget(lbl_dest)  # Añade la etiqueta al layout
+
+        self.destino_combo = QComboBox()  # Crea un combobox para seleccionar el destinatario
+        layout.addWidget(self.destino_combo)  # Añade el combobox al layout
+
+        # Crea el botón para enviar dinero
+        btn_send = QPushButton('Enviar')  # Crea un botón con el texto "Enviar"
+        btn_send.setFont(QFont('Barlow', 12))  # Establece la fuente del botón
+        btn_send.setStyleSheet("background-color: #00FF00; color: #FFFFFF;")  # Estilo del botón
+        btn_send.clicked.connect(self.handle_transferir)  # Conecta el evento de clic con la función handle_transferir
+        layout.addWidget(btn_send)  # Añade el botón al layout
+
+        # Crea el botón para retirar dinero
+        btn_withdraw = QPushButton('Retirar')  # Crea un botón con el texto "Retirar"
+        btn_withdraw.setFont(QFont('Barlow', 12))  # Establece la fuente del botón
+        btn_withdraw.setStyleSheet("background-color: #00FF00; color: #FFFFFF;")  # Estilo del botón
+        btn_withdraw.clicked.connect(self.handle_retirar)  # Conecta el evento de clic con la función handle_retirar
+        layout.addWidget(btn_withdraw)  # Añade el botón al layout
+
+        # Crea el botón para recargar dinero
+        btn_reload = QPushButton('Recargar')  # Crea un botón con el texto "Recargar"
+        btn_reload.setFont(QFont('Barlow', 12))  # Establece la fuente del botón
+        btn_reload.setStyleSheet("background-color: #00FF00; color: #FFFFFF;")  # Estilo del botón
+        btn_reload.clicked.connect(self.handle_recargar)  # Conecta el evento de clic con la función handle_recargar
+        layout.addWidget(btn_reload)  # Añade el botón al layout
+
+        # Crea el botón para ver el historial de transacciones
+        btn_hist = QPushButton('Historial')  # Crea un botón con el texto "Historial"
+        btn_hist.setFont(QFont('Barlow', 12))  # Establece la fuente del botón
+        btn_hist.setStyleSheet("background-color: #00FF00; color: #FFFFFF;")  # Estilo del botón
+        btn_hist.clicked.connect(self.handle_historial)  # Conecta el evento de clic con la función handle_historial
+        layout.addWidget(btn_hist)  # Añade el botón al layout
+
+        # Crea el botón para cerrar sesión
+        btn_logout = QPushButton('Cerrar sesión')  # Crea un botón con el texto "Cerrar sesión"
+        btn_logout.setFont(QFont("Barlow", 12))  # Establece la fuente del botón
+        btn_logout.setStyleSheet("background-color: #00FF00; color: #FFFFFF;")  # Estilo del botón
+        btn_logout.clicked.connect(self.handle_logout)  # Conecta el evento de clic con la función handle_logout
+        layout.addWidget(btn_logout)  # Añade el botón al layout
+
+        return page  # Devuelve la página principal
+
+    def refrescar_principal(self):
+        self.nombre_lbl.setText(f"Usuario: {self.ctrl.usuario_autenticado.nombre_completo}")  # Muestra el nombre del usuario autenticado
+        self.saldo_lbl.setText(f"Saldo: ${self.ctrl.usuario_autenticado.cuenta.saldo:.2f}")  # Muestra el saldo actual del usuario
+        self.destino_combo.clear()  # Limpia el combobox de destinatarios
+        for u in self.ctrl.lista_usuarios:  # Itera sobre la lista de usuarios
+            if u.cedula != self.ctrl.usuario_autenticado.cedula:  # Excluye al usuario autenticado
+                self.destino_combo.addItem(u.nombre_completo)  # Añade el nombre del usuario al combobox
+        DataStore.guardar_usuarios(self.ctrl.lista_usuarios)  # Guarda la lista de usuarios en el archivo
+
+    def handle_transferir(self):
+        dest_name = self.destino_combo.currentText()  # Obtiene el nombre del destinatario seleccionado
+        dest_usr = next((u for u in self.ctrl.lista_usuarios if u.nombre_completo == dest_name), None)  # Busca el usuario destinatario
+        if not dest_usr:
+            return QMessageBox.warning(self, 'Error', 'Selecciona destinatario válido')  # Muestra un error si el destinatario no es válido
+        try:
+            monto = float(self.monto_input.text())  # Convierte el monto ingresado a tipo float
+            if monto <= 0:
+                return QMessageBox.warning(self, 'Error', 'El monto debe ser mayor que cero')  # Muestra un error si el monto es menor o igual a cero
+        except ValueError:
+            return QMessageBox.warning(self, 'Error', 'Monto inválido')  # Muestra un error si el monto no es válido
+        exito = self.ctrl.usuario_autenticado.cuenta.transferir(dest_usr.cuenta, monto)  # Realiza la transferencia
+        if exito:
+            self.ctrl.usuario_autenticado.historial.append({
+                'tipo': 'envío',
+                'monto': monto,
+                'destino': dest_usr.nombre_completo,
+                'fecha': datetime.now().isoformat()
+            })  # Añade la transacción al historial del usuario autenticado
+            dest_usr.historial.append({
+                'tipo': 'recibido',
+                'monto': monto,
+                'origen': self.ctrl.usuario_autenticado.nombre_completo,
+                'fecha': datetime.now().isoformat()
+            })  # Añade la transacción al historial del destinatario
+            QMessageBox.information(self, 'Éxito', f'Enviado ${monto:.2f}')  # Muestra un mensaje de éxito
+        else:
+            QMessageBox.warning(self, 'Error', 'Saldo insuficiente')  # Muestra un mensaje de error si no hay saldo suficiente
+        self.monto_input.clear()  # Limpia el campo de monto
+        self.refrescar_principal()  # Refresca la información de la página principal
+
+    def handle_retirar(self):
+        try:
+            monto = float(self.monto_input.text())  # Convierte el monto ingresado a tipo float
+        except ValueError:
+            return QMessageBox.warning(self, 'Error', 'Monto inválido')  # Muestra un error si el monto no es válido
+        if self.ctrl.usuario_autenticado.cuenta.saldo >= monto:  # Verifica si el usuario tiene saldo suficiente
+            self.ctrl.usuario_autenticado.cuenta.saldo -= monto  # Resta el monto del saldo
+            self.ctrl.usuario_autenticado.historial.append({
+                'tipo': 'retiro',
+                'monto': monto,
+                'fecha': datetime.now().isoformat()
+            })  # Añade la transacción de retiro al historial
+            QMessageBox.information(self, 'Éxito', f'Retirado ${monto:.2f}')  # Muestra un mensaje de éxito
+        else:
+            QMessageBox.warning(self, 'Error', 'Saldo insuficiente')  # Muestra un mensaje de error si no hay saldo suficiente
+        self.monto_input.clear()  # Limpia el campo de monto
+        self.refrescar_principal()  # Refresca la información de la página principal
+
+    def handle_recargar(self):
+        try:
+            monto = float(self.monto_input.text())  # Convierte el monto ingresado a tipo float
+        except ValueError:
+            return QMessageBox.warning(self, 'Error', 'Monto inválido')  # Muestra un error si el monto no es válido
+        self.ctrl.usuario_autenticado.cuenta.saldo += monto  # Suma el monto al saldo del usuario
+        self.ctrl.usuario_autenticado.historial.append({
+            'tipo': 'recarga',
+            'monto': monto,
+            'fecha': datetime.now().isoformat()
+        })  # Añade la transacción de recarga al historial
+        QMessageBox.information(self, 'Éxito', f'Recargado ${monto:.2f}')  # Muestra un mensaje de éxito
+        self.monto_input.clear()  # Limpia el campo de monto
+        self.refrescar_principal()  # Refresca la información de la página principal
+
+    def handle_historial(self):
+        texto = ''  # Inicializa la variable de texto para mostrar el historial
+        for t in self.ctrl.usuario_autenticado.historial:  # Itera sobre el historial del usuario autenticado
+            fecha_str = t.get('fecha', 'Fecha no disponible')  # Obtiene la fecha de la transacción
+            if fecha_str != 'Fecha no disponible':  # Si la fecha es válida
+                try:
+                    fecha = datetime.fromisoformat(fecha_str)  # Convierte la fecha a formato datetime
+                    fecha_str = fecha.strftime('%d/%m/%Y %I:%M %p')  # Formatea la fecha
+                except ValueError:
+                    fecha_str = 'Fecha inválida'  # Si la fecha no es válida, muestra un mensaje de error
+            linea = f"{fecha_str} {t['tipo']} ${t['monto']:.2f}"  # Crea una línea con la información de la transacción
+            if 'destino' in t: linea += f" a {t['destino']}"  # Añade el destino si está presente
+            if 'origen' in t: linea += f" de {t['origen']}"  # Añade el origen si está presente
+            texto += linea + '\n'  # Añade la línea al texto
+        QMessageBox.information(self, 'Historial', texto or 'Sin transacciones')  # Muestra el historial o un mensaje si no hay transacciones
+
+    def handle_logout(self):
+        self.ctrl.usuario_autenticado = None  # Limpia la información del usuario autenticado
+        self.setCurrentIndex(0)  # Vuelve a la pestaña de login
+
+    # ------------- Pestaña Admin (3) -------------
+    def crear_pagina_admin(self) -> QWidget:
+        page = QWidget()  # Crea un contenedor para la página administrativa
+        layout = QVBoxLayout(page)  # Utiliza un layout vertical para organizar los widgets
+        layout.setContentsMargins(0, -10, -10, 0)  # Establece márgenes alrededor del layout
+
+        top_layout = QHBoxLayout()  # Crea un layout horizontal para la parte superior de la página
+        layout.addLayout(top_layout)  # Añade el layout horizontal al layout principal
+        top_layout.addStretch()  # Añade espacio flexible en la parte superior
+
+        # Añade el logo de la aplicación
+        icon_label = QLabel()  # Crea una etiqueta para mostrar el logo
+        pix = QPixmap('logo.png')  # Carga la imagen del logo
+        if not pix.isNull():  # Verifica que la imagen se haya cargado correctamente
+            icon_label.setPixmap(pix.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatio))  # Redimensiona la imagen
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)  # Alinea la imagen a la derecha y arriba
+        top_layout.addWidget(icon_label)  # Añade la imagen al layout superior
+
+        lbl = QLabel("Usuarios registrados:")  # Etiqueta para la lista de usuarios registrados
+        lbl.setFont(QFont("Barlow", 12))  # Establece el estilo de la etiqueta
+        layout.addWidget(lbl)  # Añade la etiqueta al layout
+
+        self.admin_listw = QListWidget()  # Crea un widget de lista para mostrar los usuarios
+        layout.addWidget(self.admin_listw)  # Añade el widget de lista al layout
+
+        # Crea el botón para ver los detalles de un usuario
+        btn_view = QPushButton("Ver detalles")  # Crea un botón con el texto "Ver detalles"
+        btn_view.setFont(QFont("Barlow", 12))  # Establece la fuente del botón
+        btn_view.setStyleSheet("background-color: #00FF00; color: #FFFFFF;")  # Estilo del botón
+        btn_view.clicked.connect(self.handle_admin_ver_detalles)  # Conecta el evento de clic con la función handle_admin_ver_detalles
+        layout.addWidget(btn_view)  # Añade el botón al layout
+
+        # Crea el botón para eliminar un usuario
+        btn_delete = QPushButton("Eliminar usuario")  # Crea un botón con el texto "Eliminar usuario"
+        btn_delete.setFont(QFont("Barlow", 12))  # Establece la fuente del botón
+        btn_delete.setStyleSheet("background-color: #00FF00; color: #FFFFFF;")  # Estilo del botón
+        btn_delete.clicked.connect(self.handle_admin_eliminar)  # Conecta el evento de clic con la función handle_admin_eliminar
+        layout.addWidget(btn_delete)  # Añade el botón al layout
+
+        # Crea el botón para actualizar la lista de usuarios
+        btn_refresh = QPushButton("Actualizar lista")  # Crea un botón con el texto "Actualizar lista"
+        btn_refresh.setFont(QFont("Barlow", 12))  # Establece la fuente del botón
+        btn_refresh.setStyleSheet("background-color: #00FF00; color: #FFFFFF;")  # Estilo del botón
+        btn_refresh.clicked.connect(self.refrescar_admin)  # Conecta el evento de clic con la función refrescar_admin
+        layout.addWidget(btn_refresh)  # Añade el botón al layout
+
+        # Crea el botón para volver a la página principal
+        btn_back = QPushButton("Volver a Principal")  # Crea un botón con el texto "Volver a Principal"
+        btn_back.setFont(QFont("Barlow", 12))  # Establece la fuente del botón
+        btn_back.setStyleSheet("background-color: #00FF00; color: #FFFFFF;")  # Estilo del botón
+        btn_back.clicked.connect(lambda: self.setCurrentIndex(2))  # Cambia a la pestaña principal al hacer clic
+        layout.addWidget(btn_back)  # Añade el botón al layout
+
+        return page  # Devuelve la página administrativa
+
+    def refrescar_admin(self):
+        self.admin_listw.clear()  # Limpia la lista de usuarios
+        for u in self.ctrl.lista_usuarios:  # Itera sobre la lista de usuarios
+            self.admin_listw.addItem(f"{u.nombre_completo} (Cédula: {u.cedula})")  # Añade cada usuario a la lista
+
+    def handle_admin_ver_detalles(self):
+        item = self.admin_listw.currentItem()  # Obtiene el usuario seleccionado en la lista
+        if not item:
+            return QMessageBox.warning(self, "Error", "Selecciona un usuario")  # Muestra un mensaje si no se seleccionó un usuario
+        nombre_completo = item.text().split(" (Cédula: ")[0]  # Obtiene el nombre del usuario
+        u = next((u for u in self.ctrl.lista_usuarios if u.nombre_completo == nombre_completo), None)  # Busca el usuario en la lista
+        if u:
+            detalles = (
+                f"Nombre: {u.nombre_completo}\n"  # Muestra el nombre del usuario
+                f"Cédula: {u.cedula}\n"  # Muestra la cédula del usuario
+                f"Saldo: ${u.cuenta.saldo:.2f}\n"  # Muestra el saldo de la cuenta
+                f"Movimientos: {len(u.historial)}"  # Muestra el número de movimientos en el historial
+            )
+            QMessageBox.information(self, "Detalles", detalles)  # Muestra los detalles en una ventana emergente
+
+    def handle_admin_eliminar(self):
+        item = self.admin_listw.currentItem()  # Obtiene el usuario seleccionado en la lista
+        if not item:
+            return QMessageBox.warning(self, "Error", "Selecciona un usuario")  # Muestra un mensaje si no se seleccionó un usuario
+        nombre_completo = item.text().split(" (Cédula: ")[0]  # Obtiene el nombre del usuario
+        u = next((u for u in self.ctrl.lista_usuarios if u.nombre_completo == nombre_completo), None)  # Busca el usuario en la lista
+        if u and QMessageBox.question(self, "Confirmar", f"¿Eliminar usuario {u.nombre_completo}?") == QMessageBox.StandardButton.Yes:  # Pregunta para confirmar eliminación
+            self.ctrl.eliminar_usuario(u.cedula)  # Llama al controlador para eliminar el usuario
+            self.refrescar_admin()  # Refresca la lista de usuarios
+            QMessageBox.information(self, "Eliminado", f"Usuario {u.nombre_completo} eliminado")  # Muestra un mensaje de éxito
+
+    # ------------- Pestaña Transacciones (4) -------------
+    def crear_pagina_transacciones(self) -> QWidget:
+        page = QWidget()  # Crea un contenedor para la página de transacciones
+        layout = QVBoxLayout(page)  # Utiliza un layout vertical para organizar los widgets
+        layout.setContentsMargins(0, -10, -10, 0)  # Establece márgenes alrededor del layout
+
+        top_layout = QHBoxLayout()  # Crea un layout horizontal para la parte superior de la página
+        layout.addLayout(top_layout)  # Añade el layout horizontal al layout principal
+        top_layout.addStretch()  # Añade espacio flexible en la parte superior
+
+        # Añade el logo de la aplicación
+        icon_label = QLabel()  # Crea una etiqueta para mostrar el logo
+        pix = QPixmap('logo.png')  # Carga la imagen del logo
+        if not pix.isNull():  # Verifica que la imagen fue cargada correctamente
+            icon_label.setPixmap(pix.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatio))  # Redimensiona la imagen
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)  # Alinea la imagen
+        top_layout.addWidget(icon_label)  # Añade la imagen al layout superior
+
+        lbl = QLabel("Historial de Transacciones:")  # Etiqueta para el historial de transacciones
+        lbl.setFont(QFont("Barlow", 12))  # Establece el estilo de la etiqueta
+        layout.addWidget(lbl)  # Añade la etiqueta al layout
+
+        self.trans_listw = QListWidget()  # Crea un widget de lista para mostrar las transacciones
+        layout.addWidget(self.trans_listw)  # Añade el widget de lista al layout
+
+        # Crea el botón para actualizar el historial
+        btn_refresh = QPushButton("Actualizar")  # Crea un botón con el texto "Actualizar"
+        btn_refresh.setFont(QFont("Barlow", 12))  # Establece la fuente del botón
+        btn_refresh.setStyleSheet("background-color: #00FF00; color: #FFFFFF;")  # Estilo del botón
+        btn_refresh.clicked.connect(self.refrescar_transacciones)  # Conecta el evento de clic con la función refrescar_transacciones
+        layout.addWidget(btn_refresh)  # Añade el botón al layout
+
+        # Crea el botón para volver a la página principal
+        btn_back = QPushButton("Volver a Principal")  # Crea un botón con el texto "Volver a Principal"
+        btn_back.setFont(QFont("Barlow", 12))  # Establece la fuente del botón
+        btn_back.setStyleSheet("background-color: #00FF00; color: #FFFFFF;")  # Estilo del botón
+        btn_back.clicked.connect(lambda: self.setCurrentIndex(2))  # Cambia a la pestaña principal al hacer clic
+        layout.addWidget(btn_back)  # Añade el botón al layout
+        
+        return page  # Devuelve la página de transacciones
+
+    def refrescar_transacciones(self):
+        self.trans_listw.clear()  # Limpia la lista de transacciones
+        if self.ctrl.usuario_autenticado and self.ctrl.usuario_autenticado.historial:  # Verifica si hay historial de transacciones
+            for t in self.ctrl.usuario_autenticado.historial:  # Itera sobre el historial de transacciones
+                fecha_str = t.get('fecha', 'Fecha no disponible')  # Obtiene la fecha de la transacción
+                if fecha_str != 'Fecha no disponible':  # Si la fecha es válida
+                    try:
+                        fecha = datetime.fromisoformat(fecha_str)  # Convierte la fecha a formato datetime
+                        fecha_str = fecha.strftime('%d/%m/%Y %I:%M %p')  # Formatea la fecha
+                    except ValueError:
+                        fecha_str = 'Fecha inválida'  # Si la fecha no es válida, muestra un mensaje de error
+                linea = f"{fecha_str} {t['tipo']} ${t['monto']:.2f}"  # Crea una línea con la información de la transacción
+                if 'destino' in t: linea += f" a {t['destino']}"  # Añade el destino si está presente
+                if 'origen' in t: linea += f" de {t['origen']}"  # Añade el origen si está presente
+                self.trans_listw.addItem(linea)  # Añade la línea a la lista de transacciones
+        else:
+            self.trans_listw.addItem("Sin transacciones")  # Muestra un mensaje si no hay transacciones
+
+# ----------------- Ejecución de la aplicación -----------------
+if __name__ == "__main__":
+    app = QApplication(sys.argv)  # Crea la aplicación Qt
+    controller = AppController()  # Inicializa el controlador que maneja la lógica de la aplicación
+    window = SistemaBancarioApp(controller)  # Crea la ventana principal de la aplicación
+    window.resize(400, 600)  # Establece el tamaño inicial de la ventana
+    window.show()  # Muestra la ventana
+    sys.exit(app.exec())  # Inicia el bucle de eventos de la aplicación
