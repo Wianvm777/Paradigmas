@@ -1,0 +1,105 @@
+# Importación de dependencias necesarias para la gestión de datos y usuarios
+from datastore import DataStore, hash_password
+from usuario import Usuario  # Importa la clase Usuario para crear instancias de usuarios
+
+# La clase AppController actúa como el núcleo de la lógica de negocio
+# Gestiona la autenticación, registro, eliminación y búsqueda de usuarios
+# Interactúa con DataStore para la persistencia de datos en un archivo JSON
+class AppController:
+    """Controlador que gestiona la lógica de negocio y la persistencia de datos.
+
+    Esta clase maneja las operaciones principales de la aplicación, incluyendo la
+    autenticación de usuarios, el registro de nuevos usuarios, la eliminación de usuarios
+    y la búsqueda de usuarios por cédula. Utiliza DataStore para cargar y guardar datos
+    de usuarios de manera persistente.
+
+    Attributes:
+        LIMITE_MAXIMO_USUARIOS (int): Límite máximo de usuarios permitidos en el sistema.
+        lista_usuarios (list): Lista de instancias de la clase Usuario cargadas desde DataStore.
+        usuario_autenticado (Usuario or None): Usuario actualmente autenticado, o None si no hay.
+    """
+    LIMITE_MAXIMO_USUARIOS = 100
+
+    def __init__(self):
+        """Inicializa una nueva instancia del controlador.
+
+        Carga la lista de usuarios desde DataStore y establece el usuario autenticado como None.
+        """
+        # Carga los usuarios desde el almacenamiento persistente
+        self.lista_usuarios = DataStore.cargar_usuarios()
+        # Inicializa el usuario autenticado como None hasta que se autentique
+        self.usuario_autenticado = None
+
+    def autenticar(self, cedula, contraseña):
+        """Verifica las credenciales de un usuario comparando cédula y hash de contraseña.
+
+        Itera sobre la lista de usuarios para encontrar una coincidencia en la cédula y
+        la contraseña hasheada. Si se encuentra, establece el usuario como autenticado.
+
+        Args:
+            cedula (str): Cédula del usuario a autenticar.
+            contraseña (str): Contraseña en texto plano para verificar.
+
+        Returns:
+            bool: True si la autenticación es exitosa, False en caso contrario.
+        """
+        # Busca un usuario que coincida con la cédula y la contraseña hasheada
+        for usuario in self.lista_usuarios:
+            if usuario.cedula == cedula and usuario.password_hash == hash_password(contraseña):
+                self.usuario_autenticado = usuario
+                return True
+        return False
+
+    def registrar(self, nombre_completo, cedula, contraseña):
+        """Registra un nuevo usuario si no existe y no se supera el límite de usuarios.
+
+        Verifica que no se exceda el límite de usuarios y que la cédula no esté en uso.
+        Si las condiciones se cumplen, crea un nuevo usuario, lo agrega a la lista y
+        guarda los cambios en DataStore.
+
+        Args:
+            nombre_completo (str): Nombre completo del nuevo usuario.
+            cedula (str): Cédula del nuevo usuario.
+            contraseña (str): Contraseña en texto plano para el nuevo usuario.
+
+        Returns:
+            bool: True si el registro es exitoso, False si la cédula ya existe o se
+                  supera el límite de usuarios.
+        """
+        # Verifica el límite de usuarios y si la cédula ya está en uso
+        if len(self.lista_usuarios) >= self.LIMITE_MAXIMO_USUARIOS or any(usuario.cedula == cedula for usuario in self.lista_usuarios):
+            return False
+        # Crea un nuevo usuario con la contraseña hasheada
+        nuevo_usuario = Usuario(nombre_completo, cedula, contraseña, saldo=0.0)
+        self.lista_usuarios.append(nuevo_usuario)
+        # Guarda la lista actualizada de usuarios en el almacenamiento persistente
+        DataStore.guardar_usuarios(self.lista_usuarios)
+        return True
+
+    def eliminar_usuario(self, cedula):
+        """Elimina un usuario de la lista y actualiza el archivo JSON.
+
+        Filtra la lista de usuarios para excluir al usuario con la cédula especificada
+        y actualiza el almacenamiento persistente con la nueva lista.
+
+        Args:
+            cedula (str): Cédula del usuario a eliminar.
+        """
+        # Filtra la lista de usuarios para excluir al usuario con la cédula dada
+        self.lista_usuarios = [usuario for usuario in self.lista_usuarios if usuario.cedula != cedula]
+        # Actualiza el almacenamiento persistente con la lista modificada
+        DataStore.guardar_usuarios(self.lista_usuarios)
+
+    def buscar_usuario(self, cedula):
+        """Busca un usuario por cédula y lo retorna; devuelve None si no existe.
+
+        Utiliza un generador para encontrar el primer usuario con la cédula especificada.
+
+        Args:
+            cedula (str): Cédula del usuario a buscar.
+
+        Returns:
+            Usuario or None: Instancia del usuario si se encuentra, None en caso contrario.
+        """
+        # Busca el primer usuario que coincida con la cédula dada
+        return next((usuario for usuario in self.lista_usuarios if usuario.cedula == cedula), None)
